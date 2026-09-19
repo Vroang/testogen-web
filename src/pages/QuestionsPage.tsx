@@ -27,6 +27,7 @@ const difficultyLabels: Record<string, string> = {
   easy: 'Лёгкий',
   medium: 'Средний',
   hard: 'Сложный',
+  any: 'Любая сложность',
 }
 
 const difficultyChipClass: Record<string, string> = {
@@ -262,6 +263,9 @@ function QuestionsPage({ session }: { session: Session }) {
                     q.option_c,
                     q.option_d,
                   ]
+                  const difficultyKey = (q.difficulty ?? '')
+                    .trim()
+                    .toLowerCase()
                   return (
                     <div
                       key={q.id}
@@ -279,16 +283,14 @@ function QuestionsPage({ session }: { session: Session }) {
                       </p>
 
                       <div className="mt-3 flex flex-wrap gap-1.5">
-                        {difficultyLabels[q.difficulty] && (
-                          <span
-                            className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                              difficultyChipClass[q.difficulty] ??
-                              'bg-slate-100 text-slate-600'
-                            }`}
-                          >
-                            {difficultyLabels[q.difficulty]}
-                          </span>
-                        )}
+                        <span
+                          className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                            difficultyChipClass[difficultyKey] ??
+                            'bg-slate-100 text-slate-500'
+                          }`}
+                        >
+                          {difficultyLabels[difficultyKey] ?? 'Без сложности'}
+                        </span>
                         {q.tricky && (
                           <span className="rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-medium text-red-600">
                             С подвохом
