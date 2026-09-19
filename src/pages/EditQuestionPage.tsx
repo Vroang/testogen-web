@@ -108,6 +108,8 @@ function EditQuestionPage({ session }: { session: Session }) {
 
       {loadState === 'ready' && question && (
         <QuestionForm
+          cancelTo={returnToDraft ? '/draft' : '/questions'}
+          hint={returnToDraft ? 'Вы вернётесь в черновик' : undefined}
           initialValues={{
             topic: question.topic ?? '',
             text: question.text,

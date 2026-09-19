@@ -72,6 +72,8 @@ function QuestionForm({
   title,
   submitLabel,
   successMessage,
+  cancelTo = '/questions',
+  hint,
   onSubmit,
   onSuccess,
 }: {
@@ -79,6 +81,8 @@ function QuestionForm({
   title: string
   submitLabel: string
   successMessage: string
+  cancelTo?: string
+  hint?: string
   onSubmit: (payload: QuestionFormPayload) => Promise<{ error: string | null }>
   onSuccess: () => void
 }) {
@@ -154,12 +158,15 @@ function QuestionForm({
       <header className="bg-white shadow-sm">
         <div className="mx-auto flex w-full max-w-3xl items-center gap-4 px-4 py-4 sm:px-6">
           <Link
-            to="/questions"
+            to={cancelTo}
             className="cursor-pointer rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 transition-colors hover:border-[#0E7C6B] hover:text-[#0E7C6B]"
           >
             ← Назад
           </Link>
           <span className="text-xl font-bold text-slate-800">{title}</span>
+          {hint && (
+            <span className="text-xs text-slate-400">{hint}</span>
+          )}
         </div>
       </header>
 
@@ -276,7 +283,7 @@ function QuestionForm({
 
           <div className="mt-8 flex items-center justify-between gap-3 border-t border-slate-100 pt-6">
             <Link
-              to="/questions"
+              to={cancelTo}
               className="cursor-pointer rounded-2xl px-5 py-3 text-sm font-medium text-slate-500 transition-colors hover:text-slate-800"
             >
               Отмена
