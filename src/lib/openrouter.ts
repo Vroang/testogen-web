@@ -92,6 +92,90 @@ export function normalizeQuestionText(text: string): string {
     .trim()
 }
 
+export type ModelInfo = {
+  id: string
+  name: string
+  promptPrice: string
+  completionPrice: string
+  free: boolean
+}
+
+export const MODELS_CACHE_STORAGE = 'openrouter_models_cache'
+export const AUTO_MODEL_ID = 'openrouter/auto'
+const MODELS_CACHE_TTL = 60 * 60 * 1000
+
+export function formatPricePerMillion(price: string): string {
+  const value = parseFloat(price)
+  if (Number.isNaN(value)) return '$0.00'
+  return `$${(value * 1_000_000).toFixed(2)}`
+}
+
+export async function loadModels(force = false): Promise<ModelInfo[]> {
+  if (!force) {
+    const raw = localStorage.getItem(MODELS_CACHE_STORAGE)
+    if (raw) {
+      try {
+        const cache = JSON.parse(raw)
+        if (
+          Array.isArray(cache?.models) &&
+          cache.models.length > 0 &&
+          Date.now() - (cache.ts ?? 0) < MODELS_CACHE_TTL
+        ) {
+          return cache.models as ModelInfo[]
+        }
+      } catch {
+        // повреждённый кэш игнорируем и загружаем заново
+      }
+    }
+  }
+
+  const res = await fetchWithTimeout(
+    'https://openrouter.ai/api/v1/models',
+    {},
+    20000,
+  )
+  if (!res.ok) {
+    throw new Error(`OpenRouter ответил ошибкой (${res.status})`)
+  }
+  const data = await res.json()
+  const rawModels: Array<Record<string, any>> = Array.isArray(data?.data)
+    ? data.data
+    : []
+  const models: ModelInfo[] = rawModels
+    .filter((m) => m && typeof m.id === 'string')
+    .map((m) => {
+      const promptPrice = String(m.pricing?.prompt ?? '0')
+      const completionPrice = String(m.pricing?.completion ?? '0')
+      return {
+        id: m.id,
+        name:
+          typeof m.name === 'string' && m.name ? m.name : (m.id as string),
+        promptPrice,
+        completionPrice,
+        free:
+          m.id.endsWith(':free') ||
+          (promptPrice === '0' && completionPrice === '0'),
+      }
+    })
+
+  const free = models
+    .filter((m) => m.free)
+    .sort((a, b) => a.name.localeCompare(b.name))
+  const paid = models
+    .filter((m) => !m.free)
+    .sort(
+      (a, b) =>
+        parseFloat(a.promptPrice || '0') - parseFloat(b.promptPrice || '0'),
+    )
+  const sorted = [...free, ...paid]
+
+  localStorage.setItem(
+    MODELS_CACHE_STORAGE,
+    JSON.stringify({ ts: Date.now(), models: sorted }),
+  )
+  return sorted
+}
+
 async function fetchWithTimeout(
   url: string,
   options: RequestInit,

@@ -2,33 +2,59 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import {
+  AUTO_MODEL_ID,
   checkApiKey,
+  formatPricePerMillion,
   getStoredApiKey,
   getStoredModel,
-  OPENROUTER_MODELS,
+  loadModels,
   storeOpenRouterSettings,
 } from '../lib/openrouter'
+import type { ModelInfo } from '../lib/openrouter'
 
 function SettingsPage() {
   const navigate = useNavigate()
 
   const [apiKey, setApiKey] = useState('')
-  const [model, setModel] = useState('openrouter/auto')
   const [showKey, setShowKey] = useState(false)
   const [checking, setChecking] = useState(false)
   const [checkResult, setCheckResult] = useState<
     { ok: boolean; message: string } | null
   >(null)
   const [saved, setSaved] = useState(false)
+  const [model, setModel] = useState(AUTO_MODEL_ID)
   const savedTimer = useRef<number | undefined>(undefined)
+
+  // Список моделей
+  const [modelsLoading, setModelsLoading] = useState(true)
+  const [modelsError, setModelsError] = useState<string | null>(null)
+  const [models, setModels] = useState<ModelInfo[]>([])
+  const [modelFilter, setModelFilter] = useState<'free' | 'all'>('free')
+  const [dropdownOpen, setDropdownOpen] = useState(false)
 
   useEffect(() => {
     setApiKey(getStoredApiKey())
     setModel(getStoredModel())
-    return () => {
-      if (savedTimer.current) window.clearTimeout(savedTimer.current)
-    }
+    loadModels()
+      .then((list) => setModels(list))
+      .catch((e) =>
+        setModelsError(e instanceof Error ? e.message : String(e)),
+      )
+      .finally(() => setModelsLoading(false))
   }, [])
+
+  async function refreshModels() {
+    setModelsLoading(true)
+    setModelsError(null)
+    try {
+      const list = await loadModels(true)
+      setModels(list)
+    } catch (e) {
+      setModelsError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setModelsLoading(false)
+    }
+  }
 
   function flashSaved() {
     if (savedTimer.current) window.clearTimeout(savedTimer.current)
@@ -39,6 +65,12 @@ function SettingsPage() {
   function handleSave() {
     storeOpenRouterSettings(apiKey.trim(), model)
     flashSaved()
+  }
+
+  function selectModel(id: string) {
+    setModel(id)
+    localStorage.setItem('openrouter_model', id)
+    setDropdownOpen(false)
   }
 
   async function handleCheck() {
@@ -54,13 +86,37 @@ function SettingsPage() {
     setChecking(false)
     setCheckResult({
       ok: result.ok,
-      message: result.ok ? 'Ключ рабочий' : (result.message ?? 'Ключ не проверен'),
+      message: result.ok
+        ? 'Ключ рабочий'
+        : (result.message ?? 'Ключ не проверен'),
     })
   }
 
   async function handleSignOut() {
     await supabase.auth.signOut()
     navigate('/login', { replace: true })
+  }
+
+  // auto всегда первым, дальше — по фильтру
+  const autoEntry: ModelInfo = {
+    id: AUTO_MODEL_ID,
+    name: 'Auto — сама выберет модель',
+    promptPrice: '0',
+    completionPrice: '0',
+    free: false,
+  }
+  const filteredModels = [
+    autoEntry,
+    ...models.filter((m) => m.id !== AUTO_MODEL_ID && (modelFilter === 'all' || m.free)),
+  ]
+  const selectedName =
+    model === AUTO_MODEL_ID
+      ? autoEntry.name
+      : (models.find((m) => m.id === model)?.name ?? model)
+
+  function priceLabel(m: ModelInfo): string | null {
+    if (m.id === AUTO_MODEL_ID) return null
+    return m.free ? 'Бесплатно' : `${formatPricePerMillion(m.promptPrice)} / ${formatPricePerMillion(m.completionPrice)} за 1M`
   }
 
   return (
@@ -135,24 +191,136 @@ function SettingsPage() {
           </div>
 
           <div className="mt-6">
-            <span className="mb-1 block text-sm font-medium text-slate-600">
-              Модель
-            </span>
+            <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+              <span className="text-sm font-medium text-slate-600">Модель</span>
+              <button
+                type="button"
+                onClick={refreshModels}
+                disabled={modelsLoading}
+                className="cursor-pointer text-sm font-medium text-slate-500 transition-colors hover:text-[#0E7C6B] disabled:opacity-60"
+              >
+                Обновить список
+              </button>
+            </div>
+
             <div className="flex flex-wrap gap-2">
-              {OPENROUTER_MODELS.map((m) => (
-                <button
-                  key={m.id}
-                  type="button"
-                  onClick={() => setModel(m.id)}
-                  className={`cursor-pointer rounded-full px-5 py-2 text-sm font-medium transition-colors ${
-                    model === m.id
-                      ? 'bg-[#0E7C6B] text-white'
-                      : 'border border-slate-200 bg-white text-slate-600 hover:border-[#0E7C6B]'
-                  }`}
-                >
-                  {m.label}
-                </button>
-              ))}
+              <button
+                type="button"
+                onClick={() => setModelFilter('free')}
+                className={`cursor-pointer rounded-full px-4 py-2 text-sm font-medium transition-colors ${
+                  modelFilter === 'free'
+                    ? 'bg-[#0E7C6B] text-white'
+                    : 'border border-slate-200 bg-white text-slate-600 hover:border-[#0E7C6B]'
+                }`}
+              >
+                Только бесплатные
+              </button>
+              <button
+                type="button"
+                onClick={() => setModelFilter('all')}
+                className={`cursor-pointer rounded-full px-4 py-2 text-sm font-medium transition-colors ${
+                  modelFilter === 'all'
+                    ? 'bg-[#0E7C6B] text-white'
+                    : 'border border-slate-200 bg-white text-slate-600 hover:border-[#0E7C6B]'
+                }`}
+              >
+                Все модели
+              </button>
+            </div>
+
+            <div className="mt-3">
+              {modelsLoading && (
+                <p className="text-sm text-slate-400">
+                  Загружаем список моделей…
+                </p>
+              )}
+
+              {!modelsLoading && modelsError && (
+                <div>
+                  <p className="text-sm text-red-600">
+                    Не удалось загрузить список. Проверьте соединение.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={refreshModels}
+                    className="mt-2 cursor-pointer rounded-2xl bg-[#0E7C6B] px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-[#0B6355]"
+                  >
+                    Повторить
+                  </button>
+                </div>
+              )}
+
+              {!modelsLoading && !modelsError && (
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setDropdownOpen((v) => !v)}
+                    className="flex w-full cursor-pointer items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-3 text-left transition-colors hover:border-[#0E7C6B]"
+                  >
+                    <span className="truncate text-slate-800">
+                      {selectedName}
+                    </span>
+                    <span className="shrink-0 text-slate-400">
+                      {dropdownOpen ? '▲' : '▼'}
+                    </span>
+                  </button>
+
+                  {dropdownOpen && (
+                    <>
+                      <div
+                        className="fixed inset-0 z-40"
+                        onClick={() => setDropdownOpen(false)}
+                      />
+                      <div className="absolute z-50 mt-2 max-h-80 w-full overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-lg">
+                        {filteredModels.map((m) => {
+                          const label = priceLabel(m)
+                          const selected = model === m.id
+                          return (
+                            <button
+                              key={m.id}
+                              type="button"
+                              onClick={() => selectModel(m.id)}
+                              className={`flex w-full cursor-pointer items-center gap-3 px-5 py-3 text-left transition-colors hover:bg-slate-50 ${
+                                selected ? 'bg-teal-50' : ''
+                              }`}
+                            >
+                              <div className="min-w-0 flex-1">
+                                <div className="truncate text-sm font-medium text-slate-800">
+                                  {m.name}
+                                </div>
+                                <div className="truncate text-xs text-slate-400">
+                                  {m.id}
+                                </div>
+                              </div>
+                              {label && (
+                                <span
+                                  className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                                    m.free
+                                      ? 'bg-green-100 text-green-700'
+                                      : 'bg-slate-100 text-slate-500'
+                                  }`}
+                                >
+                                  {label}
+                                </span>
+                              )}
+                              {selected && (
+                                <span className="shrink-0 font-semibold text-[#0E7C6B]">
+                                  ✓
+                                </span>
+                              )}
+                            </button>
+                          )
+                        })}
+                        {filteredModels.length === 0 && (
+                          <div className="px-5 py-4 text-sm text-slate-400">
+                            Нет моделей в этом фильтре
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
