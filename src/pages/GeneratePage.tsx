@@ -1,12 +1,12 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { Session } from '@supabase/supabase-js'
-import { supabase } from '../lib/supabase'
 import {
-  generatePortion,
+  buildUserPrompt,
+  generateQuestionsBatch,
   getStoredApiKey,
   getStoredModel,
-  normalizeQuestionText,
+  SYSTEM_PROMPT,
 } from '../lib/openrouter'
 
 const difficultyOptions = [
@@ -14,8 +14,6 @@ const difficultyOptions = [
   { value: 'medium', label: 'Средний' },
   { value: 'hard', label: 'Сложный' },
 ]
-
-const PORTION_SIZE = 10
 
 function GeneratePage({ session }: { session: Session }) {
   const navigate = useNavigate()
@@ -48,20 +46,6 @@ function GeneratePage({ session }: { session: Session }) {
     return Math.min(50, Math.max(1, Math.round(value)))
   }
 
-  async function loadExistingTexts(): Promise<Set<string>> {
-    const { data, error } = await supabase
-      .from('questions')
-      .select('text')
-      .eq('user_id', session.user.id)
-    const set = new Set<string>()
-    if (!error && data) {
-      for (const row of data as { text: string }[]) {
-        set.add(normalizeQuestionText(row.text))
-      }
-    }
-    return set
-  }
-
   async function handleGenerate() {
     if (generating) return
 
@@ -83,80 +67,39 @@ function GeneratePage({ session }: { session: Session }) {
     setGenerating(true)
     setGeneratedCount(0)
 
-    const existingTexts = await loadExistingTexts()
-    const total = count
-    let savedTotal = 0
-    let lastError: string | null = null
-
-    while (savedTotal < total) {
-      const portionSize = Math.min(PORTION_SIZE, total - savedTotal)
-      const result = await generatePortion({
-        apiKey,
-        preferredModel: getStoredModel(),
-        topic: topic.trim(),
-        count: portionSize,
-        difficulties: selectedDifficulties,
-      })
-
-      if (result.kind === 'error') {
-        lastError = result.message
-        break
-      }
-
-      const fresh = result.questions.filter((q) => {
-        const normalized = normalizeQuestionText(q.text)
-        if (existingTexts.has(normalized)) return false
-        existingTexts.add(normalized)
-        return true
-      })
-
-      if (fresh.length > 0) {
-        const { error } = await supabase.from('questions').insert(
-          fresh.map((q) => ({
-            user_id: session.user.id,
-            text: q.text.trim(),
-            option_a: q.options[0].trim(),
-            option_b: q.options[1].trim(),
-            option_c: q.options[2].trim(),
-            option_d: q.options[3].trim(),
-            correct_index: q.correct,
-            difficulty:
-              selectedDifficulties[
-                Math.floor(Math.random() * selectedDifficulties.length)
-              ],
-            tricky: false,
-            topic: topic.trim(),
-            source: 'ai',
-          })),
-        )
-        if (error) {
-          lastError = 'Не удалось сохранить вопросы в базу'
-          break
-        }
-        savedTotal += fresh.length
-        setGeneratedCount(savedTotal)
-      } else {
-        // Модель вернула только дубли или невалидные вопросы —
-        // заканчиваем, чтобы не запрашивать одну и ту же порцию вечно.
-        break
-      }
-    }
+    const { saved, error } = await generateQuestionsBatch({
+      apiKey,
+      preferredModel: getStoredModel(),
+      total: count,
+      difficulties: selectedDifficulties,
+      userId: session.user.id,
+      topic: topic.trim(),
+      source: 'ai',
+      buildMessages: (portionCount, difficultyLabel) => [
+        { role: 'system', content: SYSTEM_PROMPT },
+        {
+          role: 'user',
+          content: buildUserPrompt(topic.trim(), portionCount, difficultyLabel),
+        },
+      ],
+      onProgress: setGeneratedCount,
+    })
 
     setGenerating(false)
 
-    if (savedTotal > 0) {
-      showToast(`Добавлено ${savedTotal} ${pluralQuestions(savedTotal)}`)
+    if (saved > 0) {
+      showToast(`Добавлено ${saved} ${pluralQuestions(saved)}`)
       setTimeout(() => navigate('/questions'), 1200)
       return
     }
 
-    if (lastError === 'Ключ OpenRouter неверный') {
-      showToast(lastError, 'error')
+    if (error === 'Ключ OpenRouter неверный') {
+      showToast(error, 'error')
       setTimeout(() => navigate('/settings'), 1200)
       return
     }
 
-    showToast(lastError ?? 'Не удалось сгенерировать вопросы', 'error')
+    showToast(error ?? 'Не удалось сгенерировать вопросы', 'error')
   }
 
   return (

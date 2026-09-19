@@ -11,6 +11,7 @@ import GeneratePage from './pages/GeneratePage'
 import SettingsPage from './pages/SettingsPage'
 import TextbooksPage from './pages/TextbooksPage'
 import TextbookViewPage from './pages/TextbookViewPage'
+import TextbookGeneratePage from './pages/TextbookGeneratePage'
 
 function App() {
   const [session, setSession] = useState<Session | null>(null)
@@ -70,6 +71,10 @@ function App() {
         <Route
           path="/textbooks/:id"
           element={authed(<TextbookViewPage session={session!} />)}
+        />
+        <Route
+          path="/textbooks/:id/generate"
+          element={authed(<TextbookGeneratePage session={session!} />)}
         />
         <Route
           path="/settings"

@@ -200,13 +200,22 @@ function TextbookViewPage({ session }: { session: Session }) {
                     · загружен {uploadedDate}
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setDeleting(true)}
-                  className="cursor-pointer rounded-2xl border border-red-200 bg-white px-4 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-50"
-                >
-                  Удалить учебник
-                </button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/textbooks/${textbook.id}/generate`)}
+                    className="cursor-pointer rounded-2xl bg-[#0E7C6B] px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#0B6355]"
+                  >
+                    ✨ Сгенерировать вопросы
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDeleting(true)}
+                    className="cursor-pointer rounded-2xl border border-red-200 bg-white px-4 py-2.5 text-sm font-medium text-red-600 transition-colors hover:bg-red-50"
+                  >
+                    Удалить учебник
+                  </button>
+                </div>
               </div>
             </div>
 

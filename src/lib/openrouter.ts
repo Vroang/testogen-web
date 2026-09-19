@@ -1,3 +1,5 @@
+import { supabase } from './supabase'
+
 export const OPENROUTER_MODELS = [
   { id: 'openrouter/auto', label: 'Auto — сама выберет модель' },
   { id: 'deepseek/deepseek-chat-v3.1', label: 'DeepSeek Chat v3.1' },
@@ -27,7 +29,9 @@ export type GeneratedQuestion = {
   correct: number
 }
 
-const SYSTEM_PROMPT = `Ты — генератор школьных тестов по истории и обществознанию. Твоя задача — составить вопросы с вариантами ответов.
+export type ChatMessage = { role: 'system' | 'user'; content: string }
+
+export const SYSTEM_PROMPT = `Ты — генератор школьных тестов по истории и обществознанию. Твоя задача — составить вопросы с вариантами ответов.
 
 ПРАВИЛА:
 - Ровно 4 варианта ответа на каждый вопрос.
@@ -44,12 +48,34 @@ const SYSTEM_PROMPT = `Ты — генератор школьных тестов
 ]
 где correct — индекс правильного варианта (0-3).`
 
-function buildUserPrompt(topic: string, count: number, difficultyLabel: string): string {
+export const TEXTBOOK_SYSTEM_ADDITION = `Используй ТОЛЬКО приведённый ниже текст учебника и указанную тему. Не придумывай факты, которых нет в тексте. Если в тексте недостаточно материала для N вопросов — сделай сколько сможешь.`
+
+export function buildUserPrompt(
+  topic: string,
+  count: number,
+  difficultyLabel: string,
+): string {
   return `Тема: ${topic}
 Количество вопросов: ${count}
 Сложность: ${difficultyLabel}
 
 Верни JSON-массив вопросов.`
+}
+
+export function buildTextbookUserPrompt(
+  topic: string,
+  count: number,
+  difficultyLabel: string,
+  textbookText: string,
+): string {
+  return `Тема: ${topic}
+Количество вопросов: ${count}
+Сложность: ${difficultyLabel}
+
+Текст учебника:
+${textbookText}
+
+Верни JSON-массив вопросов: [{"text": "...", "options": ["...", "...", "...", "..."], "correct": 0-3}, ...]`
 }
 
 function isValidQuestion(q: unknown): q is GeneratedQuestion {
@@ -176,20 +202,6 @@ export async function loadModels(force = false): Promise<ModelInfo[]> {
   return sorted
 }
 
-async function fetchWithTimeout(
-  url: string,
-  options: RequestInit,
-  timeoutMs: number,
-): Promise<Response> {
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), timeoutMs)
-  try {
-    return await fetch(url, { ...options, signal: controller.signal })
-  } finally {
-    clearTimeout(timer)
-  }
-}
-
 export async function checkApiKey(
   apiKey: string,
 ): Promise<{ ok: boolean; message?: string }> {
@@ -211,18 +223,33 @@ export type PortionResult =
   | { kind: 'ok'; questions: GeneratedQuestion[]; model: string }
   | { kind: 'error'; message: string }
 
-export async function generatePortion({
+async function fetchWithTimeout(
+  url: string,
+  options: RequestInit,
+  timeoutMs: number,
+): Promise<Response> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    return await fetch(url, { ...options, signal: controller.signal })
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+/**
+ * Ядро каскада: перебирает модели (выбранная → остальные), на каждый
+ * запрос — таймаут 60 сек. content обрабатывается через parseQuestions;
+ * пустой результат считается неудачей модели и перебор продолжается.
+ */
+export async function requestQuestionsFromAI({
   apiKey,
   preferredModel,
-  topic,
-  count,
-  difficulties,
+  messages,
 }: {
   apiKey: string
   preferredModel: string
-  topic: string
-  count: number
-  difficulties: string[]
+  messages: ChatMessage[]
 }): Promise<PortionResult> {
   const modelOrder = [
     preferredModel,
@@ -234,15 +261,6 @@ export async function generatePortion({
 
   for (const model of modelOrder) {
     try {
-      const difficulty =
-        difficulties[Math.floor(Math.random() * difficulties.length)]
-      const difficultyLabel =
-        difficulty === 'easy'
-          ? 'Лёгкий'
-          : difficulty === 'hard'
-            ? 'Сложный'
-            : 'Средний'
-
       const res = await fetchWithTimeout(
         'https://openrouter.ai/api/v1/chat/completions',
         {
@@ -251,16 +269,7 @@ export async function generatePortion({
             Authorization: `Bearer ${apiKey}`,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({
-            model,
-            messages: [
-              { role: 'system', content: SYSTEM_PROMPT },
-              {
-                role: 'user',
-                content: buildUserPrompt(topic, count, difficultyLabel),
-              },
-            ],
-          }),
+          body: JSON.stringify({ model, messages }),
         },
         60000,
       )
@@ -302,4 +311,113 @@ export async function generatePortion({
   }
 
   return { kind: 'error', message: lastError }
+}
+
+export async function loadExistingQuestionTexts(
+  userId: string,
+): Promise<Set<string>> {
+  const { data, error } = await supabase
+    .from('questions')
+    .select('text')
+    .eq('user_id', userId)
+  const set = new Set<string>()
+  if (!error && data) {
+    for (const row of data as { text: string }[]) {
+      set.add(normalizeQuestionText(row.text))
+    }
+  }
+  return set
+}
+
+/**
+ * Общий цикл генерации (Шаги 6 и 8): порции по 10, фильтр дублей,
+ * insert в Supabase, прогресс. buildMessages строит сообщения для
+ * каждой порции; onProgress сообщает, сколько вопросов сохранено.
+ */
+export async function generateQuestionsBatch({
+  apiKey,
+  preferredModel,
+  total,
+  difficulties,
+  userId,
+  topic,
+  source,
+  buildMessages,
+  onProgress,
+}: {
+  apiKey: string
+  preferredModel: string
+  total: number
+  difficulties: string[]
+  userId: string
+  topic: string
+  source: 'ai' | 'pdf'
+  buildMessages: (portionCount: number, difficultyLabel: string) => ChatMessage[]
+  onProgress: (savedTotal: number) => void
+}): Promise<{ saved: number; error: string | null }> {
+  const existingTexts = await loadExistingQuestionTexts(userId)
+  let savedTotal = 0
+  let lastError: string | null = null
+
+  while (savedTotal < total) {
+    const portionSize = Math.min(10, total - savedTotal)
+    const difficulty =
+      difficulties[Math.floor(Math.random() * difficulties.length)]
+    const difficultyLabel =
+      difficulty === 'easy'
+        ? 'Лёгкий'
+        : difficulty === 'hard'
+          ? 'Сложный'
+          : 'Средний'
+
+    const result = await requestQuestionsFromAI({
+      apiKey,
+      preferredModel,
+      messages: buildMessages(portionSize, difficultyLabel),
+    })
+
+    if (result.kind === 'error') {
+      lastError = result.message
+      break
+    }
+
+    const fresh = result.questions.filter((q) => {
+      const normalized = normalizeQuestionText(q.text)
+      if (existingTexts.has(normalized)) return false
+      existingTexts.add(normalized)
+      return true
+    })
+
+    if (fresh.length === 0) {
+      // Модель вернула только дубли или невалидные вопросы —
+      // заканчиваем, чтобы не запрашивать одну и ту же порцию вечно.
+      break
+    }
+
+    const { error } = await supabase.from('questions').insert(
+      fresh.map((q) => ({
+        user_id: userId,
+        text: q.text.trim(),
+        option_a: q.options[0].trim(),
+        option_b: q.options[1].trim(),
+        option_c: q.options[2].trim(),
+        option_d: q.options[3].trim(),
+        correct_index: q.correct,
+        difficulty:
+          difficulties[Math.floor(Math.random() * difficulties.length)],
+        tricky: false,
+        topic: topic.trim() || null,
+        source,
+      })),
+    )
+    if (error) {
+      lastError = 'Не удалось сохранить вопросы в базу'
+      break
+    }
+
+    savedTotal += fresh.length
+    onProgress(savedTotal)
+  }
+
+  return { saved: savedTotal, error: lastError }
 }
