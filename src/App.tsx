@@ -1,25 +1,50 @@
+import { useEffect, useState } from 'react'
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+import type { Session } from '@supabase/supabase-js'
+import { supabase } from './lib/supabase'
+import LoginPage from './pages/LoginPage'
+import HomePage from './pages/HomePage'
+
 function App() {
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
-      <div className="w-full max-w-md rounded-2xl bg-white p-10 text-center shadow-lg">
-        <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-teal-600 text-3xl text-white">
-          Т
-        </div>
-        <h1 className="text-2xl font-bold text-slate-800">
-          ТестоГен — веб-версия
-        </h1>
-        <p className="mt-3 text-slate-500">
-          Работает с теми же данными, что и мобильное приложение
-        </p>
-        <button
-          type="button"
-          onClick={() => {}}
-          className="mt-8 w-full cursor-pointer rounded-2xl bg-teal-600 px-8 py-3 text-lg font-medium text-white transition-colors hover:bg-teal-700"
-        >
-          Войти
-        </button>
+  const [session, setSession] = useState<Session | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session)
+      setLoading(false)
+    })
+
+    const { data } = supabase.auth.onAuthStateChange((_event, newSession) => {
+      setSession(newSession)
+    })
+    return () => data.subscription.unsubscribe()
+  }, [])
+
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-50 text-slate-500">
+        Загрузка…
       </div>
-    </div>
+    )
+  }
+
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route
+          path="/login"
+          element={session ? <Navigate to="/" replace /> : <LoginPage />}
+        />
+        <Route
+          path="/"
+          element={
+            session ? <HomePage session={session} /> : <Navigate to="/login" replace />
+          }
+        />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </BrowserRouter>
   )
 }
 
