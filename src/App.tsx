@@ -4,6 +4,7 @@ import type { Session } from '@supabase/supabase-js'
 import { supabase } from './lib/supabase'
 import LoginPage from './pages/LoginPage'
 import HomePage from './pages/HomePage'
+import QuestionsPage from './pages/QuestionsPage'
 import StubPage from './pages/StubPage'
 
 function App() {
@@ -43,7 +44,7 @@ function App() {
         <Route path="/home" element={authed(<HomePage session={session!} />)} />
         <Route
           path="/questions"
-          element={authed(<StubPage title="Банк вопросов" icon="📚" />)}
+          element={authed(<QuestionsPage session={session!} />)}
         />
         <Route
           path="/textbooks"
