@@ -7,6 +7,8 @@ import HomePage from './pages/HomePage'
 import QuestionsPage from './pages/QuestionsPage'
 import EditQuestionPage from './pages/EditQuestionPage'
 import NewQuestionPage from './pages/NewQuestionPage'
+import GeneratePage from './pages/GeneratePage'
+import SettingsPage from './pages/SettingsPage'
 import StubPage from './pages/StubPage'
 
 function App() {
@@ -53,6 +55,10 @@ function App() {
           element={authed(<NewQuestionPage session={session!} />)}
         />
         <Route
+          path="/questions/generate"
+          element={authed(<GeneratePage session={session!} />)}
+        />
+        <Route
           path="/questions/:id/edit"
           element={authed(<EditQuestionPage session={session!} />)}
         />
@@ -62,7 +68,7 @@ function App() {
         />
         <Route
           path="/settings"
-          element={authed(<StubPage title="Настройки" icon="⚙️" />)}
+          element={authed(<SettingsPage />)}
         />
         <Route
           path="*"

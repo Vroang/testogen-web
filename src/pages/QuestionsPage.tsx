@@ -190,6 +190,12 @@ function QuestionsPage({ session }: { session: Session }) {
                 {plural(questions.length, 'вопрос', 'вопроса', 'вопросов')}
               </span>
               <Link
+                to="/questions/generate"
+                className="cursor-pointer rounded-xl border border-[#0E7C6B] bg-white px-4 py-2 text-sm font-medium text-[#0E7C6B] transition-colors hover:bg-teal-50"
+              >
+                ✨ Сгенерировать через ИИ
+              </Link>
+              <Link
                 to="/questions/new"
                 className="cursor-pointer rounded-xl bg-[#0E7C6B] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#0B6355]"
               >
