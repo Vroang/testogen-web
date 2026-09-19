@@ -6,6 +6,7 @@ import LoginPage from './pages/LoginPage'
 import HomePage from './pages/HomePage'
 import QuestionsPage from './pages/QuestionsPage'
 import EditQuestionPage from './pages/EditQuestionPage'
+import NewQuestionPage from './pages/NewQuestionPage'
 import StubPage from './pages/StubPage'
 
 function App() {
@@ -46,6 +47,10 @@ function App() {
         <Route
           path="/questions"
           element={authed(<QuestionsPage session={session!} />)}
+        />
+        <Route
+          path="/questions/new"
+          element={authed(<NewQuestionPage session={session!} />)}
         />
         <Route
           path="/questions/:id/edit"
