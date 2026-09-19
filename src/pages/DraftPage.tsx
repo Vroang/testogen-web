@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+﻿import { useEffect, useRef, useState } from 'react'
 import { Link, Navigate, useNavigate } from 'react-router-dom'
 import type { Session } from '@supabase/supabase-js'
 import { exportDraftToDocx } from '../lib/docxExport'
@@ -51,8 +51,44 @@ function loadDraft(): DraftData | null {
   }
 }
 
-function saveDraft(draft: DraftData) {
-  sessionStorage.setItem('test_draft', JSON.stringify(draft))
+type DraftUiState = {
+  expandedVariants: number[]
+  scrollPosition: number
+  lastEditedQuestionId?: string
+}
+
+function loadDraftPage(): { draft: DraftData; ui: DraftUiState } | null {
+  try {
+    const raw = sessionStorage.getItem('test_draft')
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (!parsed?.variants?.length) return null
+    const draft = { topic: parsed.topic, variants: parsed.variants, params: parsed.params } as DraftData
+    const ui: DraftUiState = {
+      expandedVariants: Array.isArray(parsed.expandedVariants)
+        ? parsed.expandedVariants.filter((n: unknown) => typeof n === 'number')
+        : [],
+      scrollPosition: Number(parsed.scrollPosition) || 0,
+      lastEditedQuestionId:
+        typeof parsed.lastEditedQuestionId === 'string'
+          ? parsed.lastEditedQuestionId
+          : undefined,
+    }
+    return { draft, ui }
+  } catch {
+    return null
+  }
+}
+
+function saveDraftPage(draft: DraftData, ui?: Partial<DraftUiState>) {
+  try {
+    const raw = sessionStorage.getItem('test_draft')
+    const payload = raw ? JSON.parse(raw) : {}
+    Object.assign(payload, draft, ui ?? {})
+    sessionStorage.setItem('test_draft', JSON.stringify(payload))
+  } catch {
+    // не критично: черновик останется только в состоянии компонента
+  }
 }
 
 function RefreshIcon() {
@@ -86,8 +122,14 @@ function TrashIcon() {
 
 function DraftPage({ session }: { session: Session }) {
   const navigate = useNavigate()
-  const [draft, setDraft] = useState<DraftData | null>(() => loadDraft())
-  const [expanded, setExpanded] = useState<Set<number>>(new Set())
+  const initial = useRef(loadDraftPage())
+  const [draft, setDraft] = useState<DraftData | null>(() => initial.current?.draft ?? null)
+  const [expanded, setExpanded] = useState<Set<number>>(
+    () => new Set(initial.current?.ui.expandedVariants ?? []),
+  )
+  const [highlightedId, setHighlightedId] = useState<string | undefined>(
+    initial.current?.ui.lastEditedQuestionId,
+  )
   const [toast, setToast] = useState<{ text: string; kind: 'ok' | 'error'; key: number } | null>(null)
   const [busy, setBusy] = useState<'test' | 'answers' | null>(null)
   const [refreshing, setRefreshing] = useState(false)
@@ -111,6 +153,28 @@ function DraftPage({ session }: { session: Session }) {
       if (toastTimer.current) window.clearTimeout(toastTimer.current)
     }
   }, [])
+
+  // Восстановление позиции скролла после первой отрисовки.
+  useEffect(() => {
+    const saved = initial.current?.ui.scrollPosition ?? 0
+    if (saved <= 0) return
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const max = Math.max(0, document.documentElement.scrollHeight - window.innerHeight)
+        window.scrollTo({ top: Math.min(saved, max) })
+      })
+    })
+  }, [])
+
+  // Подсветка отредактированного вопроса — 2 секунды.
+  const highlightTimer = useRef<number | undefined>(undefined)
+  useEffect(() => {
+    if (!highlightedId) return
+    highlightTimer.current = window.setTimeout(() => setHighlightedId(undefined), 2000)
+    return () => {
+      if (highlightTimer.current) window.clearTimeout(highlightTimer.current)
+    }
+  }, [highlightedId])
 
   // Обновляем вопросы черновика актуальными данными из Supabase
   // (например, после редактирования вопроса по ✏️).
@@ -145,7 +209,7 @@ function DraftPage({ session }: { session: Session }) {
           )
         })
         setDraft(current)
-        saveDraft(current)
+        saveDraftPage(current)
       } finally {
         setRefreshing(false)
       }
@@ -163,7 +227,7 @@ function DraftPage({ session }: { session: Session }) {
 
   function persist(updated: DraftData) {
     setDraft(updated)
-    saveDraft(updated)
+    saveDraftPage(updated, { expandedVariants: [...expanded] })
   }
 
   function toggleExpanded(index: number) {
@@ -171,8 +235,22 @@ function DraftPage({ session }: { session: Session }) {
       const next = new Set(prev)
       if (next.has(index)) next.delete(index)
       else next.add(index)
+      if (draft) saveDraftPage(draft, { expandedVariants: [...next] })
       return next
     })
+  }
+
+  function handleEdit(question: DraftQuestion) {
+    // Сохраняем состояние черновика перед уходом на редактирование:
+    // какие варианты раскрыты, позицию скролла и id вопроса.
+    if (draft) {
+      saveDraftPage(draft, {
+        expandedVariants: [...expanded],
+        scrollPosition: window.scrollY,
+        lastEditedQuestionId: question.id,
+      })
+    }
+    navigate(`/questions/${question.id}/edit?returnTo=draft`)
   }
 
   async function handleExport(kind: 'test' | 'answers') {
@@ -297,7 +375,7 @@ function DraftPage({ session }: { session: Session }) {
           title="Редактировать вопрос"
           onClick={(e) => {
             e.stopPropagation()
-            navigate(`/questions/${question.id}/edit?returnTo=draft`)
+            handleEdit(question)
           }}
           className="cursor-pointer rounded-lg p-1.5 text-slate-400 transition-colors hover:text-[#0E7C6B]"
         >
@@ -381,7 +459,11 @@ function DraftPage({ session }: { session: Session }) {
                     {variant.questions.map((q, qi) => (
                       <div
                         key={`${qi}-${q.id}`}
-                        className="rounded-2xl border border-slate-100 p-4"
+                        className={`rounded-2xl border p-4 transition-colors duration-700 ${
+                          highlightedId === q.id
+                            ? 'border-[#0E7C6B] bg-[#E6F4F1]'
+                            : 'border-slate-100 bg-white'
+                        }`}
                       >
                         {questionActionBar(variant.index, qi, q)}
                         <p className="text-sm font-medium text-slate-800">
