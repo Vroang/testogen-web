@@ -195,6 +195,7 @@ function BuildPage({ session }: { session: Session }) {
     sessionStorage.setItem(
       DRAFT_STORAGE,
       JSON.stringify({
+        topic: mainTopic.trim(),
         variants,
         params: { variantsCount, perVariant },
       }),

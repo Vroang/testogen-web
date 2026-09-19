@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Link, Navigate } from 'react-router-dom'
+import { exportDraftToDocx } from '../lib/docxExport'
 
 type DraftQuestion = {
   text: string
@@ -35,6 +36,7 @@ function DraftPage() {
   const [draft] = useState<DraftData | null>(loadDraft)
   const [expanded, setExpanded] = useState<Set<number>>(new Set())
   const [toast, setToast] = useState<string | null>(null)
+  const [busy, setBusy] = useState<'test' | 'answers' | null>(null)
 
   const perVariant = draft?.params?.perVariant ?? draft?.variants?.[0]?.questions?.length ?? 0
 
@@ -47,8 +49,17 @@ function DraftPage() {
     })
   }
 
-  function exportPlaceholder() {
-    setToast('Экспорт — в следующем шаге')
+  async function handleExport(kind: 'test' | 'answers') {
+    if (!draft || busy) return
+    setBusy(kind)
+    try {
+      await exportDraftToDocx(draft, kind)
+      setToast('Файл скачан')
+    } catch (e) {
+      console.error(`Не удалось сформировать файл: ${e instanceof Error ? e.message : String(e)}`)
+      setToast('Не удалось сформировать файл')
+    }
+    setBusy(null)
     setTimeout(() => setToast(null), 2500)
   }
 
@@ -157,17 +168,27 @@ function DraftPage() {
         <div className="mt-6 grid gap-3 sm:grid-cols-2">
           <button
             type="button"
-            onClick={exportPlaceholder}
-            className="cursor-pointer rounded-2xl border border-[#0E7C6B] bg-white px-6 py-3.5 text-sm font-medium text-[#0E7C6B] transition-colors hover:bg-teal-50"
+            onClick={() => handleExport('test')}
+            disabled={busy !== null || draft.variants.length === 0}
+            className={`rounded-2xl px-6 py-3.5 text-sm font-medium transition-colors ${
+              busy === 'test'
+                ? 'cursor-wait bg-[#0B6355] text-white opacity-80'
+                : 'cursor-pointer bg-[#0E7C6B] text-white hover:bg-[#0B6355] disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500'
+            }`}
           >
-            📥 Скачать тест (.docx)
+            {busy === 'test' ? 'Готовим файл…' : '📥 Скачать тест (.docx)'}
           </button>
           <button
             type="button"
-            onClick={exportPlaceholder}
-            className="cursor-pointer rounded-2xl border border-[#0E7C6B] bg-white px-6 py-3.5 text-sm font-medium text-[#0E7C6B] transition-colors hover:bg-teal-50"
+            onClick={() => handleExport('answers')}
+            disabled={busy !== null || draft.variants.length === 0}
+            className={`rounded-2xl border px-6 py-3.5 text-sm font-medium transition-colors ${
+              busy === 'answers'
+                ? 'cursor-wait border-[#0E7C6B] bg-teal-50 text-[#0E7C6B] opacity-80'
+                : 'cursor-pointer border-[#0E7C6B] bg-white text-[#0E7C6B] hover:bg-teal-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400'
+            }`}
           >
-            📥 Скачать ответы (.docx)
+            {busy === 'answers' ? 'Готовим файл…' : '📥 Скачать ответы (.docx)'}
           </button>
         </div>
       </main>
