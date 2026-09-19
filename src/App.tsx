@@ -9,7 +9,8 @@ import EditQuestionPage from './pages/EditQuestionPage'
 import NewQuestionPage from './pages/NewQuestionPage'
 import GeneratePage from './pages/GeneratePage'
 import SettingsPage from './pages/SettingsPage'
-import StubPage from './pages/StubPage'
+import TextbooksPage from './pages/TextbooksPage'
+import TextbookViewPage from './pages/TextbookViewPage'
 
 function App() {
   const [session, setSession] = useState<Session | null>(null)
@@ -64,7 +65,11 @@ function App() {
         />
         <Route
           path="/textbooks"
-          element={authed(<StubPage title="Мои учебники" icon="📖" />)}
+          element={authed(<TextbooksPage session={session!} />)}
+        />
+        <Route
+          path="/textbooks/:id"
+          element={authed(<TextbookViewPage session={session!} />)}
         />
         <Route
           path="/settings"
