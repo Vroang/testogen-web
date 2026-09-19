@@ -1,6 +1,7 @@
 import {
   AlignmentType,
   Document,
+  LineRuleType,
   Packer,
   Paragraph,
   Table,
@@ -72,11 +73,13 @@ function buildTestDocument(
     }),
   ]
 
-  draft.variants.forEach((variant) => {
+  draft.variants.forEach((variant, vi) => {
+    // Разрыв страницы — только перед вариантами 2+; вариант 1 идёт
+    // сразу после заголовка, без пустого листа.
     children.push(
       new Paragraph({
-        pageBreakBefore: true,
-        spacing: { after: 200 },
+        pageBreakBefore: vi > 0,
+        spacing: { after: 160 },
         children: [
           new TextRun({
             text: `Вариант ${variant.index}`,
@@ -88,9 +91,15 @@ function buildTestDocument(
     )
 
     variant.questions.forEach((q, qi) => {
+      const compact = {
+        before: qi === 0 ? 0 : 120,
+        after: 0,
+        line: 276,
+        lineRule: LineRuleType.AUTO,
+      }
       children.push(
         new Paragraph({
-          spacing: { before: 120 },
+          spacing: compact,
           children: [
             new TextRun({ text: `${qi + 1}. `, bold: true }),
             new TextRun({ text: q.text }),
@@ -100,10 +109,12 @@ function buildTestDocument(
       const options = [q.option_a, q.option_b, q.option_c, q.option_d]
       options.forEach((text, i) => {
         children.push(
-          new Paragraph({ children: [new TextRun({ text: `${LETTERS[i]}) ${text}` })] }),
+          new Paragraph({
+            spacing: { after: 0, line: 276, lineRule: LineRuleType.AUTO },
+            children: [new TextRun({ text: `${LETTERS[i]}) ${text}` })],
+          }),
         )
       })
-      children.push(new Paragraph({ children: [] }))
     })
   })
 
@@ -131,14 +142,14 @@ function buildAnswersDocument(
   const children: Array<Paragraph | Table> = [
     new Paragraph({
       alignment: AlignmentType.CENTER,
-      spacing: { after: 120 },
+      spacing: { after: 80 },
       children: [
         new TextRun({ text: `Ответы: ${meta.display}`, bold: true, size: 36 }),
       ],
     }),
     new Paragraph({
       alignment: AlignmentType.CENTER,
-      spacing: { after: 200 },
+      spacing: { after: 120 },
       children: [
         new TextRun({
           text: `Всего вариантов: ${draft.variants.length}`,
@@ -152,7 +163,7 @@ function buildAnswersDocument(
   draft.variants.forEach((variant) => {
     children.push(
       new Paragraph({
-        spacing: { before: 200, after: 100 },
+        spacing: { before: 120, after: 60 },
         children: [
           new TextRun({
             text: `Вариант ${variant.index}`,
