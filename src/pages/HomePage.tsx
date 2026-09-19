@@ -119,6 +119,16 @@ function HomePage({ session }: { session: Session }) {
             </p>
           </Link>
 
+          <Link to="/build" className={cardClass}>
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-teal-50 text-2xl">
+              📝
+            </div>
+            <h2 className="mt-4 text-lg font-semibold text-slate-800">
+              Собрать тест
+            </h2>
+            <p className="mt-1 text-sm text-slate-500">Варианты для печати</p>
+          </Link>
+
           <Link to="/settings" className={cardClass}>
             <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-teal-50 text-2xl">
               ⚙️

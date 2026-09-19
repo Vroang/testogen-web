@@ -12,6 +12,8 @@ import SettingsPage from './pages/SettingsPage'
 import TextbooksPage from './pages/TextbooksPage'
 import TextbookViewPage from './pages/TextbookViewPage'
 import TextbookGeneratePage from './pages/TextbookGeneratePage'
+import BuildPage from './pages/BuildPage'
+import DraftPage from './pages/DraftPage'
 
 function App() {
   const [session, setSession] = useState<Session | null>(null)
@@ -79,6 +81,14 @@ function App() {
         <Route
           path="/settings"
           element={authed(<SettingsPage />)}
+        />
+        <Route
+          path="/build"
+          element={authed(<BuildPage session={session!} />)}
+        />
+        <Route
+          path="/draft"
+          element={authed(<DraftPage />)}
         />
         <Route
           path="*"
