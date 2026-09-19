@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 import { plural } from '../lib/plural'
@@ -71,6 +71,7 @@ function TrashIcon() {
 }
 
 function QuestionsPage({ session }: { session: Session }) {
+  const navigate = useNavigate()
   const [loadState, setLoadState] = useState<LoadState>('loading')
   const [questions, setQuestions] = useState<Question[]>([])
   const [filter, setFilter] = useState<TopicFilter>({ kind: 'all' })
@@ -318,7 +319,7 @@ function QuestionsPage({ session }: { session: Session }) {
                                 title="Редактировать"
                                 onClick={(e) => {
                                   e.stopPropagation()
-                                  showToast('Редактирование — в следующем шаге')
+                                  navigate(`/questions/${q.id}/edit`)
                                 }}
                                 className="cursor-pointer rounded-xl p-2 text-slate-500 transition-colors hover:bg-slate-100 hover:text-[#0E7C6B]"
                               >

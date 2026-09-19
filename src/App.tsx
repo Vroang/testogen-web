@@ -5,6 +5,7 @@ import { supabase } from './lib/supabase'
 import LoginPage from './pages/LoginPage'
 import HomePage from './pages/HomePage'
 import QuestionsPage from './pages/QuestionsPage'
+import EditQuestionPage from './pages/EditQuestionPage'
 import StubPage from './pages/StubPage'
 
 function App() {
@@ -45,6 +46,10 @@ function App() {
         <Route
           path="/questions"
           element={authed(<QuestionsPage session={session!} />)}
+        />
+        <Route
+          path="/questions/:id/edit"
+          element={authed(<EditQuestionPage session={session!} />)}
         />
         <Route
           path="/textbooks"
