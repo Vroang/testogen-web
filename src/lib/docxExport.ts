@@ -130,7 +130,10 @@ function answerCell(text: string, bold = false, width?: number): TableCell {
   return new TableCell({
     width: width ? { size: width, type: WidthType.DXA } : undefined,
     children: [
-      new Paragraph({ children: [new TextRun({ text, bold, size: 24 })] }),
+      new Paragraph({
+        spacing: { after: 0, line: 240, lineRule: LineRuleType.AUTO },
+        children: [new TextRun({ text, bold, size: 22 })],
+      }),
     ],
   })
 }
@@ -176,6 +179,7 @@ function buildAnswersDocument(
     children.push(
       new Table({
         width: { size: 3200, type: WidthType.DXA },
+        margins: { top: 40, bottom: 40, left: 80, right: 80 },
         rows: [
           new TableRow({
             children: [

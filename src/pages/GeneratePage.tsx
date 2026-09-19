@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { Session } from '@supabase/supabase-js'
 import {
@@ -28,6 +28,15 @@ function GeneratePage({ session }: { session: Session }) {
   const [generating, setGenerating] = useState(false)
   const [generatedCount, setGeneratedCount] = useState(0)
   const [toast, setToast] = useState<{ text: string; kind: 'ok' | 'error'; key: number } | null>(null)
+
+  // Предзаполнение темы (например, из диалога замены вопроса в черновике)
+  useEffect(() => {
+    const prefill = sessionStorage.getItem('generate_topic_prefill')
+    if (prefill) {
+      setTopic(prefill)
+      sessionStorage.removeItem('generate_topic_prefill')
+    }
+  }, [])
 
   function showToast(text: string, kind: 'ok' | 'error' = 'ok') {
     setToast({ text, kind, key: Date.now() })

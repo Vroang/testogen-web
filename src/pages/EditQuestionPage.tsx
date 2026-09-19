@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 import QuestionForm from '../components/QuestionForm'
@@ -24,7 +24,9 @@ type LoadState = 'loading' | 'error' | 'ready'
 
 function EditQuestionPage({ session }: { session: Session }) {
   const { id } = useParams<{ id: string }>()
+  const [searchParams] = useSearchParams()
   const navigate = useNavigate()
+  const returnToDraft = searchParams.get('returnTo') === 'draft'
 
   const [loadState, setLoadState] = useState<LoadState>('loading')
   const [question, setQuestion] = useState<Question | null>(null)
@@ -121,7 +123,12 @@ function EditQuestionPage({ session }: { session: Session }) {
           submitLabel="Сохранить"
           successMessage="Вопрос обновлён"
           onSubmit={handleUpdate}
-          onSuccess={() => setTimeout(() => navigate('/questions'), 900)}
+          onSuccess={() =>
+            setTimeout(
+              () => navigate(returnToDraft ? '/draft' : '/questions'),
+              900,
+            )
+          }
         />
       )}
 

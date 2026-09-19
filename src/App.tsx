@@ -88,7 +88,7 @@ function App() {
         />
         <Route
           path="/draft"
-          element={authed(<DraftPage />)}
+          element={authed(<DraftPage session={session!} />)}
         />
         <Route
           path="*"
