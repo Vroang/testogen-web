@@ -1,13 +1,20 @@
 import { supabase } from './supabase'
 
-export const OPENROUTER_MODELS = [
-  { id: 'openrouter/auto', label: 'Auto — сама выберет модель' },
-  { id: 'deepseek/deepseek-chat-v3.1', label: 'DeepSeek Chat v3.1' },
-  { id: 'meta-llama/llama-3.3-70b-instruct:free', label: 'Llama 3.3 70B (бесплатная)' },
-]
-
 export const OPENROUTER_KEY_STORAGE = 'openrouter_api_key'
 export const OPENROUTER_MODEL_STORAGE = 'openrouter_model'
+export const FALLBACK_MODELS_STORAGE = 'openrouter_fallback_models'
+
+// Резерв по умолчанию (используется, пока список моделей ни разу
+// не загружался в настройках). Проверен по каталогу OpenRouter;
+// динамический резерв обновляется при загрузке списка моделей.
+export const DEFAULT_FALLBACK_MODELS = [
+  'google/gemma-4-31b-it:free',
+  'qwen/qwen3.8-27b:free',
+  'deepseek/deepseek-v4-flash-0731:free',
+]
+
+/** Модели, снятые с бесплатного тарифа — не используем и предупреждаем. */
+export const DEPRECATED_FREE_MODELS = ['meta-llama/llama-3.3-70b-instruct:free']
 
 export function getStoredApiKey(): string {
   return localStorage.getItem(OPENROUTER_KEY_STORAGE) ?? ''
@@ -238,9 +245,11 @@ async function fetchWithTimeout(
 }
 
 /**
- * Ядро каскада: перебирает модели (выбранная → остальные), на каждый
+ * Ядро каскада: перебирает модели (выбранная → резерв), на каждый
  * запрос — таймаут 60 сек. content обрабатывается через parseQuestions;
  * пустой результат считается неудачей модели и перебор продолжается.
+ * Ошибки вида «модель недоступна бесплатно» (404/410) пропускаются
+ * молча — они не становятся итоговым сообщением.
  */
 export async function requestQuestionsFromAI({
   apiKey,
@@ -251,13 +260,13 @@ export async function requestQuestionsFromAI({
   preferredModel: string
   messages: ChatMessage[]
 }): Promise<PortionResult> {
-  const modelOrder = [
-    preferredModel,
-    ...OPENROUTER_MODELS.map((m) => m.id).filter(
-      (modelId) => modelId !== preferredModel,
-    ),
-  ]
-  let lastError = 'Не удалось связаться с OpenRouter'
+  const fallbacks = getFallbackModels()
+  const modelOrder = [preferredModel]
+  for (const m of [...fallbacks, ...DEFAULT_FALLBACK_MODELS]) {
+    if (m !== preferredModel && !modelOrder.includes(m)) modelOrder.push(m)
+  }
+  let lastError: string | null = null
+  let unavailableSkipped = 0
 
   for (const model of modelOrder) {
     try {
@@ -286,6 +295,15 @@ export async function requestQuestionsFromAI({
         } catch {
           // тело не JSON — оставляем общий текст
         }
+        if (
+          res.status === 404 ||
+          res.status === 410 ||
+          /unavailable for free/i.test(message)
+        ) {
+          // Модель недоступна — молча пробуем следующую.
+          unavailableSkipped += 1
+          continue
+        }
         lastError = message
         continue
       }
@@ -310,7 +328,36 @@ export async function requestQuestionsFromAI({
     }
   }
 
-  return { kind: 'error', message: lastError }
+  if (!lastError) {
+    lastError =
+      unavailableSkipped > 0
+        ? 'Доступные модели сейчас не работают'
+        : 'Не удалось связаться с OpenRouter'
+  }
+  return {
+    kind: 'error',
+    message: `${lastError}. Попробуйте выбрать другую модель в Настройках`,
+  }
+}
+
+function getFallbackModels(): string[] {
+  try {
+    const raw = localStorage.getItem(FALLBACK_MODELS_STORAGE)
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed.filter((m) => typeof m === 'string' && m)
+      }
+    }
+  } catch {
+    // повреждённый резерв — используем дефолтный
+  }
+  return DEFAULT_FALLBACK_MODELS
+}
+
+/** Сохраняет резервные модели (вызывается после загрузки списка в настройках). */
+export function storeFallbackModels(ids: string[]) {
+  localStorage.setItem(FALLBACK_MODELS_STORAGE, JSON.stringify(ids.slice(0, 3)))
 }
 
 export async function loadExistingQuestionTexts(

@@ -4,10 +4,12 @@ import { supabase } from '../lib/supabase'
 import {
   AUTO_MODEL_ID,
   checkApiKey,
+  DEPRECATED_FREE_MODELS,
   formatPricePerMillion,
   getStoredApiKey,
   getStoredModel,
   loadModels,
+  storeFallbackModels,
   storeOpenRouterSettings,
 } from '../lib/openrouter'
 import type { ModelInfo } from '../lib/openrouter'
@@ -23,6 +25,7 @@ function SettingsPage() {
   >(null)
   const [saved, setSaved] = useState(false)
   const [model, setModel] = useState(AUTO_MODEL_ID)
+  const [deprecatedModel, setDeprecatedModel] = useState(false)
   const savedTimer = useRef<number | undefined>(undefined)
 
   // Список моделей
@@ -34,9 +37,18 @@ function SettingsPage() {
 
   useEffect(() => {
     setApiKey(getStoredApiKey())
-    setModel(getStoredModel())
+    const storedModel = getStoredModel()
+    setModel(storedModel)
+    if (DEPRECATED_FREE_MODELS.includes(storedModel)) {
+      setDeprecatedModel(true)
+    }
     loadModels()
-      .then((list) => setModels(list))
+      .then((list) => {
+        setModels(list)
+        // Резерв: первые 3 бесплатные модели из актуального списка.
+        const freeIds = list.filter((m) => m.free).map((m) => m.id)
+        if (freeIds.length > 0) storeFallbackModels(freeIds)
+      })
       .catch((e) =>
         setModelsError(e instanceof Error ? e.message : String(e)),
       )
@@ -49,6 +61,8 @@ function SettingsPage() {
     try {
       const list = await loadModels(true)
       setModels(list)
+      const freeIds = list.filter((m) => m.free).map((m) => m.id)
+      if (freeIds.length > 0) storeFallbackModels(freeIds)
     } catch (e) {
       setModelsError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -229,6 +243,11 @@ function SettingsPage() {
             </div>
 
             <div className="mt-3">
+              {deprecatedModel && (
+                <p className="mb-2 rounded-2xl bg-red-50 px-4 py-2.5 text-sm text-red-600">
+                  Эта модель больше недоступна бесплатно. Выберите другую.
+                </p>
+              )}
               {modelsLoading && (
                 <p className="text-sm text-slate-400">
                   Загружаем список моделей…
