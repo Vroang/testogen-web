@@ -2,6 +2,14 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
+import {
+  buildUserPrompt,
+  getStoredApiKey,
+  getStoredModel,
+  normalizeQuestionText,
+  requestQuestionsFromAI,
+  SYSTEM_PROMPT,
+} from '../lib/openrouter'
 
 type Question = {
   id: string
@@ -85,8 +93,15 @@ function BuildPage({ session }: { session: Session }) {
   const [topicsModal, setTopicsModal] = useState(false)
   const [modalChecked, setModalChecked] = useState<string[]>([])
   const [dialog, setDialog] = useState<
-    { kind: 'no-questions' | 'not-enough'; n: number; needed: number } | null
+    | { kind: 'no-questions' | 'not-enough' | 'still-not-enough'; n: number; needed: number }
+    | null
   >(null)
+  const [generating, setGenerating] = useState<{ saved: number; total: number } | null>(null)
+  const stopRequested = useRef(false)
+
+  function showToast(text: string, kind: 'ok' | 'error' = 'ok') {
+    setToast({ text, kind, key: Date.now() })
+  }
 
   useEffect(() => {
     const timer = setTimeout(() => setToast(null), 3000)
@@ -178,9 +193,9 @@ function BuildPage({ session }: { session: Session }) {
 
   const notEnough = availableN < needed
 
-  function buildDraft() {
-    let pool = [...mainPool]
-    if (pool.length < needed && extraPool.length > 0) {
+  function buildDraft(poolOverride?: Question[]) {
+    let pool = poolOverride ?? [...mainPool]
+    if (!poolOverride && pool.length < needed && extraPool.length > 0) {
       pool = [...pool, ...extraPool]
     }
     const shuffled = shuffle(pool)
@@ -219,6 +234,123 @@ function BuildPage({ session }: { session: Session }) {
       return
     }
     buildDraft()
+  }
+
+  async function handleGenerateMissing() {
+    if (generating) return
+
+    if (!mainTopic.trim()) {
+      showToast('Укажите тему теста, чтобы сгенерировать вопросы', 'error')
+      return
+    }
+    const apiKey = getStoredApiKey()
+    if (!apiKey) {
+      showToast('Укажите API-ключ в Настройках', 'error')
+      navigate('/settings')
+      return
+    }
+
+    const missing = needed - (mainPool.length + extraPool.length)
+    if (missing <= 0) {
+      buildDraft()
+      return
+    }
+
+    setDialog(null)
+    stopRequested.current = false
+    setGenerating({ saved: 0, total: missing })
+
+    const existingTexts = new Set(
+      questions.map((q) => normalizeQuestionText(q.text)),
+    )
+    const workingPool: Question[] = [...mainPool, ...extraPool]
+    let savedTotal = 0
+    let lastError: string | null = null
+
+    while (savedTotal < missing) {
+      if (stopRequested.current) break
+      const portionSize = Math.min(10, missing - savedTotal)
+      const difficulty =
+        difficulties[Math.floor(Math.random() * difficulties.length)]
+      const difficultyLabel =
+        difficulty === 'easy'
+          ? 'Лёгкий'
+          : difficulty === 'hard'
+            ? 'Сложный'
+            : 'Средний'
+
+      const result = await requestQuestionsFromAI({
+        apiKey,
+        preferredModel: getStoredModel(),
+        messages: [
+          { role: 'system', content: SYSTEM_PROMPT },
+          {
+            role: 'user',
+            content: buildUserPrompt(mainTopic.trim(), portionSize, difficultyLabel),
+          },
+        ],
+      })
+
+      if (result.kind === 'error') {
+        lastError = result.message
+        break
+      }
+
+      const fresh = result.questions.filter((q) => {
+        const normalized = normalizeQuestionText(q.text)
+        if (existingTexts.has(normalized)) return false
+        existingTexts.add(normalized)
+        return true
+      })
+
+      if (fresh.length === 0) break
+
+      const rows = fresh.map((q) => ({
+        user_id: session.user.id,
+        text: q.text.trim(),
+        option_a: q.options[0].trim(),
+        option_b: q.options[1].trim(),
+        option_c: q.options[2].trim(),
+        option_d: q.options[3].trim(),
+        correct_index: q.correct,
+        difficulty:
+          difficulties[Math.floor(Math.random() * difficulties.length)],
+        tricky: false,
+        topic: mainTopic.trim(),
+        source: 'ai',
+      }))
+      const { error } = await supabase.from('questions').insert(rows)
+      if (error) {
+        lastError = 'Не удалось сохранить вопросы в базу'
+        break
+      }
+
+      const inserted = rows as unknown as Question[]
+      setQuestions((prev) => [...prev, ...inserted])
+      workingPool.push(...inserted)
+      savedTotal += fresh.length
+      setGenerating({ saved: savedTotal, total: missing })
+    }
+
+    setGenerating(null)
+
+    if (stopRequested.current) {
+      showToast(`Остановлено, добавлено ${savedTotal} вопросов`)
+      return
+    }
+    if (lastError) {
+      showToast(lastError, 'error')
+      return
+    }
+    if (workingPool.length >= needed) {
+      buildDraft(workingPool)
+      return
+    }
+    setDialog({
+      kind: 'still-not-enough',
+      n: workingPool.length,
+      needed,
+    })
   }
 
   function toggleExtraTopic(t: string) {
@@ -532,7 +664,7 @@ function BuildPage({ session }: { session: Session }) {
       {dialog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
           <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-lg">
-            {dialog.kind === 'no-questions' ? (
+            {dialog.kind === 'no-questions' && (
               <>
                 <h3 className="text-lg font-semibold text-slate-800">
                   {mainTopic.trim()
@@ -556,7 +688,8 @@ function BuildPage({ session }: { session: Session }) {
                   </button>
                 </div>
               </>
-            ) : (
+            )}
+            {dialog.kind === 'not-enough' && (
               <>
                 <h3 className="text-lg font-semibold text-slate-800">
                   В банке {dialog.n} подходящих вопросов, нужно {dialog.needed}.
@@ -572,14 +705,14 @@ function BuildPage({ session }: { session: Session }) {
                   </button>
                   <button
                     type="button"
-                    onClick={() => navigate('/questions/generate')}
+                    onClick={handleGenerateMissing}
                     className="cursor-pointer rounded-2xl border border-[#0E7C6B] bg-white px-4 py-2.5 text-sm font-medium text-[#0E7C6B] transition-colors hover:bg-teal-50"
                   >
                     Сгенерировать через ИИ
                   </button>
                   <button
                     type="button"
-                    onClick={buildDraft}
+                    onClick={() => buildDraft()}
                     className="cursor-pointer rounded-2xl bg-[#0E7C6B] px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#0B6355]"
                   >
                     Собрать с повторами
@@ -587,6 +720,74 @@ function BuildPage({ session }: { session: Session }) {
                 </div>
               </>
             )}
+            {dialog.kind === 'still-not-enough' && (
+              <>
+                <h3 className="text-lg font-semibold text-slate-800">
+                  Добавлено {dialog.n}{' '}
+                  {dialog.n === 1
+                    ? 'вопрос'
+                    : dialog.n < 5
+                      ? 'вопроса'
+                      : 'вопросов'}
+                  . Всё ещё не хватает {dialog.needed}. Сгенерировать ещё?
+                </h3>
+                <div className="mt-6 flex flex-wrap justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setDialog(null)}
+                    className="cursor-pointer rounded-2xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50"
+                  >
+                    Отмена
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleGenerateMissing}
+                    className="cursor-pointer rounded-2xl border border-[#0E7C6B] bg-white px-4 py-2.5 text-sm font-medium text-[#0E7C6B] transition-colors hover:bg-teal-50"
+                  >
+                    Сгенерировать ещё?
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => buildDraft()}
+                    className="cursor-pointer rounded-2xl bg-[#0E7C6B] px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#0B6355]"
+                  >
+                    Собрать с повторами
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {generating && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#FAFAF7]/95 px-4">
+          <div className="w-full max-w-sm rounded-2xl bg-white p-6 text-center shadow-lg">
+            <h3 className="text-lg font-semibold text-slate-800">
+              Генерируем вопросы…
+            </h3>
+            <p className="mt-2 text-sm text-slate-500">
+              Прогресс: {generating.saved} из {generating.total}
+            </p>
+            <div className="mt-4 h-3 w-full overflow-hidden rounded-full bg-slate-100">
+              <div
+                className="h-full rounded-full bg-[#0E7C6B] transition-all duration-300"
+                style={{
+                  width: `${Math.round(
+                    (generating.saved / Math.max(generating.total, 1)) * 100,
+                  )}%`,
+                }}
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                stopRequested.current = true
+              }}
+              className="mt-5 cursor-pointer rounded-2xl border border-slate-200 px-6 py-2.5 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50"
+            >
+              Остановить
+            </button>
           </div>
         </div>
       )}
