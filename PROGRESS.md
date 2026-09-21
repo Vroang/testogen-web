@@ -1,7 +1,41 @@
 # PROGRESS — веб-версия
 
-## Текущий шаг: 11.2 — сохранение раскрытых вариантов и скролла
-## Статус: шаг 11.2 выполнен
+## Текущий шаг: 12.2 — каркас нового pipeline обработки документов
+## Статус: шаг 12.2 выполнен
+
+## Что сделано (шаг 12.2)
+- Типы документов (src/types/document.ts): BlockType, DocumentBlock
+  (id/page/blockType/text/rawText/координаты/orderIndex), RawTextItem,
+  DocumentStats (страницы, text items, строки, блоки, заголовки,
+  параграфы, § найдено, переносы, колонтитулы, качество),
+  ParsedDocument (RAW + NORMALIZED + blocks + rawItems + stats).
+- Флаг (src/lib/featureFlags.ts): 'use_new_document_parser' в
+  localStorage, по умолчанию выключен.
+- Новый pipeline (src/lib/documentParser/index.ts):
+  processDocumentNew (PDF через pdfjs с сохранением координат в
+  rawItems, DOCX через mammoth, TXT напрямую), detectFormat,
+  basicNormalize (переносы/пробелы), createPlaceholderBlocks
+  (по абзацу на \n\n, распределение по страницам), computeStats.
+  Единая точка входа processDocument: флаг выключен → старый
+  pipeline (обёртка в ParsedDocument, логика legacy не менялась).
+- Диагностический экран /textbooks/preview: статистика обработки,
+  переключатель RAW/NORMALIZED, NORMALIZED — блоки по страницам с
+  метками типов, RAW — сплошной текст (monospace, серый фон),
+  кнопка «Продолжить (сохранить как обычно)» — заглушка (Шаг 12.6).
+  Документ хранится в sessionStorage ('document_preview'), в
+  Supabase пока не сохраняется.
+- Настройки: блок «Экспериментальные функции» с галочкой «Использовать
+  новый парсер документов (экспериментально)» ('use_new_document_parser'
+  в localStorage).
+- TextbooksPage: при включённом флаге загрузка → processDocumentNew →
+  preview (без записи в Supabase); при выключенном — старый путь без
+  изменений.
+- Проверено в браузере: флаг ON → загрузка TXT → preview со
+  статистикой (Страниц 1, Блоков 2, § найдено 2, Качество Среднее),
+  NORMALIZED (2 блока на Странице 1), RAW (исходный текст);
+  флаг OFF → старый путь (без preview). Существующие учебники и
+  генерация не тронуты. Сборка без ошибок, тестовые данные убраны.
+- Отправлено в GitHub (main).
 
 ## Что сделано (шаг 12.1)
 - Добавлен vercel.json с rewrite-правилом: все запросы → /index.html

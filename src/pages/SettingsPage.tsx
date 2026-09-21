@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { isNewDocumentParserEnabled, setNewDocumentParserEnabled } from '../lib/featureFlags'
 import {
   AUTO_MODEL_ID,
   checkApiKey,
@@ -26,6 +27,7 @@ function SettingsPage() {
   const [saved, setSaved] = useState(false)
   const [model, setModel] = useState(AUTO_MODEL_ID)
   const [deprecatedModel, setDeprecatedModel] = useState(false)
+  const [newParserEnabled, setNewParserEnabled] = useState(false)
   const savedTimer = useRef<number | undefined>(undefined)
 
   // Список моделей
@@ -37,8 +39,10 @@ function SettingsPage() {
 
   useEffect(() => {
     setApiKey(getStoredApiKey())
+    setNewParserEnabled(isNewDocumentParserEnabled())
     const storedModel = getStoredModel()
     setModel(storedModel)
+    setNewParserEnabled(isNewDocumentParserEnabled())
     if (DEPRECATED_FREE_MODELS.includes(storedModel)) {
       setDeprecatedModel(true)
     }
@@ -353,6 +357,33 @@ function SettingsPage() {
             </button>
             {saved && <span className="text-sm text-green-700">Сохранено</span>}
           </div>
+        </section>
+
+        <section className="mt-5 rounded-2xl bg-white p-6 shadow-sm sm:p-8">
+          <h2 className="text-lg font-semibold text-slate-800">
+            Экспериментальные функции
+          </h2>
+          <label className="mt-4 flex cursor-pointer items-start gap-3">
+            <input
+              id="new-parser-flag"
+              type="checkbox"
+              checked={newParserEnabled}
+              onChange={(e) => {
+                setNewDocumentParserEnabled(e.target.checked)
+                setNewParserEnabled(e.target.checked)
+              }}
+              className="mt-0.5 h-5 w-5 cursor-pointer accent-[#0E7C6B]"
+            />
+            <span>
+              <span className="block text-sm font-medium text-slate-700">
+                Использовать новый парсер документов (экспериментально)
+              </span>
+              <span className="mt-0.5 block text-xs text-slate-400">
+                Старый парсер остаётся доступным. Переключение влияет
+                только на обработку новых загрузок.
+              </span>
+            </span>
+          </label>
         </section>
 
         <section className="mt-5 rounded-2xl bg-white p-6 shadow-sm sm:p-8">

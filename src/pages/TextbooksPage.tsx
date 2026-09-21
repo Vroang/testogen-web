@@ -4,6 +4,8 @@ import type { Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 import { plural } from '../lib/plural'
 import AppHeader from '../components/AppHeader'
+import { isNewDocumentParserEnabled } from '../lib/featureFlags'
+import { processDocumentNew } from '../lib/documentParser'
 import {
   MAX_FILE_SIZE,
   SUPPORTED_EXTENSIONS,
@@ -119,6 +121,25 @@ function TextbooksPage({ session }: { session: Session }) {
     }
     if (file.size > MAX_FILE_SIZE) {
       setSizeDialog(Math.round((file.size / (1024 * 1024)) * 10) / 10)
+      return
+    }
+
+    // Новый pipeline: обработка → диагностический экран preview
+    // (без сохранения в Supabase — сохранение будет в Шаге 12.6).
+    if (isNewDocumentParserEnabled()) {
+      setProcessing({ fileName: file.name, percent: 30, stage: 'Извлечение текста' })
+      try {
+        const parsed = await processDocumentNew(file)
+        sessionStorage.setItem('document_preview', JSON.stringify(parsed))
+        setProcessing(null)
+        navigate('/textbooks/preview')
+      } catch (e) {
+        setProcessing(null)
+        const message =
+          e instanceof Error ? e.message : 'Не удалось обработать файл'
+        console.error(`Ошибка обработки файла: ${message}`)
+        showToast(message, 'error')
+      }
       return
     }
 

@@ -12,6 +12,7 @@ import SettingsPage from './pages/SettingsPage'
 import TextbooksPage from './pages/TextbooksPage'
 import TextbookViewPage from './pages/TextbookViewPage'
 import TextbookGeneratePage from './pages/TextbookGeneratePage'
+import TextbookPreviewPage from './pages/TextbookPreviewPage'
 import BuildPage from './pages/BuildPage'
 import DraftPage from './pages/DraftPage'
 
@@ -69,6 +70,10 @@ function App() {
         <Route
           path="/textbooks"
           element={authed(<TextbooksPage session={session!} />)}
+        />
+        <Route
+          path="/textbooks/preview"
+          element={authed(<TextbookPreviewPage />)}
         />
         <Route
           path="/textbooks/:id"
